@@ -1,7 +1,8 @@
 #include <Adafruit_LSM6DSOX.h>
 
-#define SENSOR_COUNT 4
-#define SENSOR_DISTANCE 10
+#include <Wire.h>
+#include <Adafruit_LIS3MDL.h>
+#include <Adafruit_Sensor.h>
 
 #include <MCUFRIEND_kbv.h>
 MCUFRIEND_kbv tft;       // hard-wired for UNO shields anyway.
@@ -43,40 +44,41 @@ uint8_t Orientation = 0;    //PORTRAIT
 #define YELLOW  0xFFE0
 #define WHITE   0xFFFF
 
-Adafruit_LSM6DSOX sox1;
-Adafruit_LSM6DSOX sox2;
-Adafruit_LSM6DSOX sox3;
-Adafruit_LSM6DSOX sox4;
+#define SENSOR_COUNT 4
+
+Adafruit_LSM6DSOX sox[4];
+
+Adafruit_LIS3MDL mgts[4];
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
   while (!Serial)
     delay(10); // will pause Zero, Leonardo, etc until serial console opens
 
-    Serial.println("Adafruit LSM6DSOX Chain!");
+    Serial.println("Adafruit LSM6DSOX + LIS3MDL Chain!");
 
-  if (!sox1.begin_I2C(0x6A)) {
+  if (!sox[0].begin_I2C(0x6A)) {
       Serial.println("Failed to find LSM6DSOX chip 1");
     while (1) {
       delay(10);
     }
   }
 
-  if (!sox2.begin_I2C(0x6B)) {
+  if (!sox[1].begin_I2C(0x6B)) {
       Serial.println("Failed to find LSM6DSOX chip 2");
     while (1) {
       delay(10);
     }
   }
 
-  if (!sox3.begin_I2C(0x1A)) {
+  if (!sox[2].begin_I2C(0x1A)) {
       Serial.println("Failed to find LSM6DSOX chip 3");
     while (1) {
       delay(10);
     }
   }
 
-  if (!sox4.begin_I2C(0x7A)) {
+  if (!sox[3].begin_I2C(0x7A)) {
       Serial.println("Failed to find LSM6DSOX chip 4");
     while (1) {
       delay(10);
@@ -85,12 +87,44 @@ void setup() {
 
   Serial.println("ALL LSM6DSOX Devices Found!");
 
-  sox1.setAccelRange(LSM6DS_ACCEL_RANGE_4_G);
-  sox2.setAccelRange(LSM6DS_ACCEL_RANGE_4_G);
-  sox3.setAccelRange(LSM6DS_ACCEL_RANGE_4_G);
-  sox4.setAccelRange(LSM6DS_ACCEL_RANGE_4_G);
+  if (!mgts[0].begin_I2C()) {
+    Serial.println("Failed to find LIS3MDL chip 1");
+    while (1) {
+      delay(10);
+    }
+  }
+
+  if (!mgts[1].begin_I2C()) {
+    Serial.println("Failed to find LIS3MDL chip 2");
+    while (1) {
+      delay(10);
+    }
+  }
+
+  if (!mgts[2].begin_I2C()) {
+    Serial.println("Failed to find LIS3MDL chip 3");
+    while (1) {
+      delay(10);
+    }
+  }
+  
+  if (!mgts[3].begin_I2C()) {
+    Serial.println("Failed to find LIS3MDL chip 4");
+    while (1) {
+      delay(10);
+    }
+  }
+
+  Serial.println("ALL LIS3MDL Devices Found!");
+
+  for (int i = 0; i < SENSOR_COUNT; i++) {
+    sox[i].setAccelRange(LSM6DS_ACCEL_RANGE_4_G);
+    sox[i].setGyroDataRate(LSM6DS_RATE_12_5_HZ);
+    sox[i].setGyroRange(LSM6DS_GYRO_RANGE_250_DPS );
+    sox[i].setAccelDataRate(LSM6DS_RATE_12_5_HZ);
+  }
   Serial.print("Accelerometer range set to: ");
-  switch (sox1.getAccelRange()) {
+  switch (sox[0].getAccelRange()) {
   case LSM6DS_ACCEL_RANGE_2_G:
     Serial.println("+-2G");
     break;
@@ -105,12 +139,8 @@ void setup() {
     break;
   }
 
-  sox1.setGyroRange(LSM6DS_GYRO_RANGE_250_DPS );
-  sox2.setGyroRange(LSM6DS_GYRO_RANGE_250_DPS );
-  sox3.setGyroRange(LSM6DS_GYRO_RANGE_250_DPS );
-  sox4.setGyroRange(LSM6DS_GYRO_RANGE_250_DPS );
   Serial.print("Gyro range set to: ");
-  switch (sox1.getGyroRange()) {
+  switch (sox[0].getGyroRange()) {
   case LSM6DS_GYRO_RANGE_125_DPS:
     Serial.println("125 degrees/s");
     break;
@@ -130,12 +160,8 @@ void setup() {
     break; // unsupported range for the DSOX
   }
 
-  sox1.setAccelDataRate(LSM6DS_RATE_12_5_HZ);
-  sox2.setAccelDataRate(LSM6DS_RATE_12_5_HZ);
-  sox3.setAccelDataRate(LSM6DS_RATE_12_5_HZ);
-  sox4.setAccelDataRate(LSM6DS_RATE_12_5_HZ);
   Serial.print("Accelerometer data rate set to: ");
-  switch (sox1.getAccelDataRate()) {
+  switch (sox[0].getAccelDataRate()) {
   case LSM6DS_RATE_SHUTDOWN:
     Serial.println("0 Hz");
     break;
@@ -171,12 +197,8 @@ void setup() {
     break;
   }
 
-  sox1.setGyroDataRate(LSM6DS_RATE_12_5_HZ);
-  sox2.setGyroDataRate(LSM6DS_RATE_12_5_HZ);
-  sox3.setGyroDataRate(LSM6DS_RATE_12_5_HZ);
-  sox4.setGyroDataRate(LSM6DS_RATE_12_5_HZ);
   Serial.print("Gyro data rate set to: ");
-  switch (sox1.getGyroDataRate()) {
+  switch (sox[0].getGyroDataRate()) {
   case LSM6DS_RATE_SHUTDOWN:
     Serial.println("0 Hz");
     break;
@@ -211,6 +233,58 @@ void setup() {
     Serial.println("6.66 KHz");
     break;
   }
+
+  for (int i = 0; i < SENSOR_COUNT; i++) {
+    mgts[i].setPerformanceMode(LIS3MDL_MEDIUMMODE);
+    mgts[i].setRange(LIS3MDL_RANGE_4_GAUSS);
+    mgts[i].setOperationMode(LIS3MDL_CONTINUOUSMODE);
+    mgts[i].setDataRate(LIS3MDL_DATARATE_155_HZ);
+    mgts[i].setIntThreshold(500);
+    mgts[i].configInterrupt(false, false, true, // enable z axis
+                          true, // polarity
+                          false, // don't latch
+                          true); // enabled!
+  }
+  Serial.print("Performance mode set to: ");
+  switch (mgts[0].getPerformanceMode()) {
+    case LIS3MDL_LOWPOWERMODE: Serial.println("Low"); break;
+    case LIS3MDL_MEDIUMMODE: Serial.println("Medium"); break;
+    case LIS3MDL_HIGHMODE: Serial.println("High"); break;
+    case LIS3MDL_ULTRAHIGHMODE: Serial.println("Ultra-High"); break;
+  }
+  
+  Serial.print("Operation mode set to: ");
+  // Single shot mode will complete conversion and go into power down
+  switch (mgts[0].getOperationMode()) {
+    case LIS3MDL_CONTINUOUSMODE: Serial.println("Continuous"); break;
+    case LIS3MDL_SINGLEMODE: Serial.println("Single mode"); break;
+    case LIS3MDL_POWERDOWNMODE: Serial.println("Power-down"); break;
+  }
+
+  Serial.print("Data rate set to: ");
+  switch (mgts[0].getDataRate()) {
+    case LIS3MDL_DATARATE_0_625_HZ: Serial.println("0.625 Hz"); break;
+    case LIS3MDL_DATARATE_1_25_HZ: Serial.println("1.25 Hz"); break;
+    case LIS3MDL_DATARATE_2_5_HZ: Serial.println("2.5 Hz"); break;
+    case LIS3MDL_DATARATE_5_HZ: Serial.println("5 Hz"); break;
+    case LIS3MDL_DATARATE_10_HZ: Serial.println("10 Hz"); break;
+    case LIS3MDL_DATARATE_20_HZ: Serial.println("20 Hz"); break;
+    case LIS3MDL_DATARATE_40_HZ: Serial.println("40 Hz"); break;
+    case LIS3MDL_DATARATE_80_HZ: Serial.println("80 Hz"); break;
+    case LIS3MDL_DATARATE_155_HZ: Serial.println("155 Hz"); break;
+    case LIS3MDL_DATARATE_300_HZ: Serial.println("300 Hz"); break;
+    case LIS3MDL_DATARATE_560_HZ: Serial.println("560 Hz"); break;
+    case LIS3MDL_DATARATE_1000_HZ: Serial.println("1000 Hz"); break;
+  }
+
+  Serial.print("Range set to: ");
+  switch (mgts[0].getRange()) {
+    case LIS3MDL_RANGE_4_GAUSS: Serial.println("+-4 gauss"); break;
+    case LIS3MDL_RANGE_8_GAUSS: Serial.println("+-8 gauss"); break;
+    case LIS3MDL_RANGE_12_GAUSS: Serial.println("+-12 gauss"); break;
+    case LIS3MDL_RANGE_16_GAUSS: Serial.println("+-16 gauss"); break;
+  }
+  
   Serial.println("");
 
   uint16_t tmp;
@@ -236,41 +310,56 @@ void loop() {
 
   double positions[SENSOR_COUNT + 1][3];
   positions[0][0] = 0; positions[0][1] = 0; positions[0][2] = 0;
-  double direction[3];
+  double accDirection[3];
+  double baseAngles[2];
+  double rollPitch[2];
+  double rollDifference;
 
-  getAccel(&sox1, direction);
-  normalize(direction);
+  getAccel(&sox1, accDirection);
+  calcRollPitch(accDirection, baseAngles);
+  normalize(accDirection);
   // cross base direction with direction of gravity to get axis of rotation
   double axisOfRotation[3];
   double up[3] = {0, 1, 0};
-  crossProduct(direction, up, axisOfRotation);
+  crossProduct(accDirection, up, axisOfRotation);
   // find the angle between base direction and gravity 
-  double angle = angleBetween(up, direction);
+  double angle = angleBetween(up, accDirection);
   Serial.print("Axis of Rotation: ");
   printVector(axisOfRotation);
   Serial.println("");
   Serial.print("Angle: "); Serial.println(angle);
-  rotateVectorCC(direction, axisOfRotation, angle);
+  rotateVectorCC(accDirection, axisOfRotation, angle);
   Serial.print("Direction: ");
-  printVector(direction);
+  printVector(accDirection);
   Serial.println("");
 
-  add(positions[0], direction, positions[1]);
+  add(positions[0], accDirection, positions[1]);
 
-  getAccel(&sox2, direction);
-  normalize(direction);
-  rotateVectorCC(direction, axisOfRotation, angle);
-  add(positions[1], direction, positions[2]);
+  getAccel(&sox2, accDirection); // get accelerometer data
+  calcRollPitch(accDirection, rollPitch); // calculate roll and pitch
+  rollDifference = rollPitch[1] - baseAngles[1]; // calculate difference from the base angle
+  Serial.print(rollDifference); Serial.println(" Pitch Difference");
+  Serial.print(rollPitch[0] - baseAngles[0]); Serial.println(" Roll Difference");
+  normalize(accDirection); // normalize the direction
+  rotateVectorCC(accDirection, up, rollDifference); // rotate the vector so the difference in accelerometers is only pitch and yaw
+  rotateVectorCC(accDirection, axisOfRotation, angle); // rotate to the y axis
+  add(positions[1], accDirection, positions[2]); // add to next position
 
-  getAccel(&sox3, direction);
-  normalize(direction);
-  rotateVectorCC(direction, axisOfRotation, angle);
-  add(positions[2], direction, positions[3]);
+  getAccel(&sox3, accDirection); // get accelerometer data
+  calcRollPitch(accDirection, rollPitch); // calculate roll and pitch
+  rollDifference = rollPitch[1] - baseAngles[1]; // calculate difference from the base angle
+  normalize(accDirection); // normalize the direction
+  rotateVectorCC(accDirection, up, rollDifference); // rotate the vector so the difference in accelerometers is only pitch and yaw
+  rotateVectorCC(accDirection, axisOfRotation, angle); // rotate to the y axis
+  add(positions[2], accDirection, positions[3]); // add to next position
 
-  getAccel(&sox4, direction);
-  normalize(direction);
-  rotateVectorCC(direction, axisOfRotation, angle);
-  add(positions[3], direction, positions[4]);
+  getAccel(&sox4, accDirection); // get accelerometer data
+  calcRollPitch(accDirection, rollPitch); // calculate roll and pitch
+  rollDifference = rollPitch[1] - baseAngles[1]; // calculate difference from the base angle
+  normalize(accDirection); // normalize the direction
+  rotateVectorCC(accDirection, up, rollDifference); // rotate the vector so the difference in accelerometers is only pitch and yaw
+  rotateVectorCC(accDirection, axisOfRotation, angle); // rotate to the y axis
+  add(positions[3], accDirection, positions[4]); // add to next position
 
   
   
@@ -290,20 +379,6 @@ void loop() {
 
 
 
-
-  
-  /*
-  printData(&sox1);
-  delay(100);
-  printData(&sox2);
-  delay(100);
-  printData(&sox3);
-  delay(100);
-  printData(&sox4);
-  delay(1000);
-  Serial.println("");
-  Serial.println("");
-  Serial.println("");*/
 }
 
 // veiwing from z axis
@@ -312,7 +387,24 @@ void printPosition(double pos[3]) {
 }
 
 void connectPoints(double pos1[3], double pos2[3]) {
-  tft.drawLine(pos1[0], pos1[1], pos2[0], pos2[1], GREEN);
+  float sizeModifier = 0.5; // size modifier for the z
+  double flatPos1[3] {pos1[0], pos1[1], 0};
+  double flatPos2[3] {pos2[0], pos2[1], 0};
+  
+  double ySlope = (pos2[1]-pos1[1]) / (pos2[0] - pos1[0]); // slope of the line
+  double zSlope = (pos2[2]-pos1[2]) / (pos2[0] - pos1[0]);
+  double yIntercept = pos1[1]/(pos1[0]*ySlope);
+  double zIntercept = pos1[2]/(pos1[0]*zSlope);
+  
+  for (double x = min(pos1[0], pos2[0]); x < max(pos1[0], pos2[0]); x+= ySlope) {
+    tft.fillCircle(x, x * ySlope + yIntercept, (x * zSlope + zIntercept) * sizeModifier, GREEN);
+  }
+  
+  //tft.drawLine(pos1[0], pos1[1], pos2[0], pos2[1], GREEN);
+}
+
+double getDistance(double pos1[3], double pos2[3]) {
+  return sqrt(pow(pos2[0]-pos1[0],2) + pow(pos2[1]-pos1[1],2) + pow(pos2[2]-pos1[2],2));
 }
 
 void adaptPosition(double pos[3]) {
@@ -366,6 +458,17 @@ void getAccel(Adafruit_LSM6DSOX* sox, double result[3]) {
   Serial.print("\t\tTemperature ");
   Serial.print(temp.temperature);
   Serial.println(" deg C");
+}
+
+void getMagnets(Adafruit_LIS3MDL magnt*, double result[3]) {
+  sensors_event_t event;
+  magnt->getEvent(&event);
+  result[0] = event.magnetic.x;
+  result[1] = event.magnetic.y;
+  result[2] = event.magnetic.z;
+  Serial.print("Magnetic Field (uTesla): ");
+  printVector(result);
+  Serial.println("");
 }
 
 /**
@@ -438,6 +541,15 @@ double dotProduct(double v1[3], double v2[3]) {
   result+= v1[1] * v2[1];
   result+= v1[2] * v2[2];
   return result;
+}
+
+// returns radians
+void calcRollPitch(double acc[3], double result[2]) {
+  double x_Buff = float(acc[0]);
+  double y_Buff = float(acc[1]);
+  double z_Buff = float(acc[2]);
+  result[0] = atan2(y_Buff , z_Buff);// * 57.3; // roll
+  result[1] = atan2((- x_Buff) , sqrt(y_Buff * y_Buff + z_Buff * z_Buff));// * 57.3; // pitch
 }
 
 double angleBetween(double v1[3], double v2[3]) {
