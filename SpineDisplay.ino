@@ -1,17 +1,25 @@
 // sensor fusion libraries
 #include <Adafruit_Sensor_Calibration.h>
 #include <Adafruit_AHRS.h>
+// libraries to use the sensors
+#include <Adafruit_LSM6DSOX.h>
+#include <Wire.h>
+#include <Adafruit_LIS3MDL.h>
+#include <Adafruit_Sensor.h>
 
 
-#define FILTER_UPDATE_RATE_HZ 100
-#define PRINT_EVERY_N_UPDATES 200
+#define FILTER_UPDATE_RATE_HZ 100 // how many times a second new data is given to the fusion filter
+#define PRINT_EVERY_N_UPDATES 200 // how often the display updates
 //#define AHRS_DEBUG_OUTPUT
 
-uint32_t timestamp;
+uint32_t timestamp; // this is a timestamp used to display how long it takes to run operations
 
+// fusion filters
 //Adafruit_NXPSensorFusion filter; // slowest
 //Adafruit_Madgwick filter;  // faster than NXP
 Adafruit_Mahony filter[4];  // fastest/smalleset
+
+// calibration arrays
 float mag_hardiron[3*4];
 float mag_softiron[9*4];
 float gyro_zerorate[3*4];
@@ -19,25 +27,19 @@ float accel_zerog[3*4];
 float mag_field[4];
 float gyro_zerorot[3*4];
 
-int firstRead = 10;
-
-
-#include <Adafruit_LSM6DSOX.h>
-#include <Wire.h>
-#include <Adafruit_LIS3MDL.h>
-#include <Adafruit_Sensor.h>
-
-
+// touch screen libraries
 #include <MCUFRIEND_kbv.h>
 MCUFRIEND_kbv tft;  // hard-wired for UNO shields anyway.
 #include <TouchScreen.h>
 
+// pinouts for the touch screen and touch calibration
 const int XP = 8, XM = A2, YP = A3, YM = 9;  //240x320 ID=0x9341
 const int TS_LEFT = 918, TS_RT = 115, TS_TOP = 80, TS_BOT = 909;
 
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
-TSPoint tp;
 
+// these settings could be used to detect a touch, but currently isn't used
+TSPoint tp; 
 #define MINPRESSURE 100
 #define MAXPRESSURE 1000
 
@@ -53,9 +55,7 @@ y = map(p.x, TOP=115, BOT=918, 0, 240)
 #define centerX 402
 #define centerY 414
 
-int16_t BOXSIZE;
-int16_t PENRADIUS = 1;
-uint16_t ID, oldcolor, currentcolor;
+uint16_t ID;
 uint8_t Orientation = 0;  //PORTRAIT
 
 // Assign human-readable names to some common 16-bit color values:
@@ -70,9 +70,9 @@ uint8_t Orientation = 0;  //PORTRAIT
 
 #define SENSOR_COUNT 4
 
-Adafruit_LSM6DSOX sox[4];
+Adafruit_LSM6DSOX sox[SENSOR_COUNT]; // accel & gyro
+Adafruit_LIS3MDL mgts[SENSOR_COUNT]; // magnetometer
 
-Adafruit_LIS3MDL mgts[4];
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -81,13 +81,13 @@ void setup() {
 
   Serial.println("Adafruit LSM6DSOX + LIS3MDL Chain!");
 
-  init_sensors();
-  load_cal();
+  init_sensors(); // setup sensors with the right settings
+  load_cal(); // load calibration into the calibration arrays
 
+  // start 4 fusion filters
   for (int i = 0; i < SENSOR_COUNT; i++) {
     filter[i].begin(FILTER_UPDATE_RATE_HZ);
   }
-  timestamp = millis();
 
   Serial.println("");
 
@@ -107,12 +107,14 @@ void setup() {
   Serial.println(tft.height());
 
   delay(1000);
+  timestamp = millis();
 }
 
 
 void loop() {
   static uint8_t counter = 0;
   // put your main code here, to run repeatedly:
+  // check if it is time to feed new data to the filter
   if ((millis() - timestamp) < (1000 / FILTER_UPDATE_RATE_HZ)) {
     return;
   }
@@ -124,7 +126,7 @@ void loop() {
     Serial.print("Took "); Serial.print(millis()-timestamp); Serial.println(" ms");
   #endif
 
-  // only print the calculated output once in a while
+  // only update the display once in a while
   if (counter++ <= PRINT_EVERY_N_UPDATES) {
     return;
   }
@@ -135,14 +137,18 @@ void loop() {
   Serial.println("");
   Serial.println("");
 
+  // position for each segment to be calculated
   double positions[SENSOR_COUNT + 1][3];
+  // set origin position to 0
   positions[0][0] = 0;
   positions[0][1] = 0;
   positions[0][2] = 0;
+  
   double accDirection[3];
   double baseAngles[3];
   double euler[3];
   double axisOfRotation[3];
+  // basic axis to rotate around
   double xAxis[3] = { 1, 0, 0 };
   double yAxis[3] = { 0, 1, 0 };
   double zAxis[3] = { 0, 0, 1 };
@@ -152,79 +158,71 @@ void loop() {
     Serial.println(i);
     // get gravity and orientation
     float x, y, z;
-    filter[i].getGravityVector(&x, &y, &z);
+    // not using a gravity vector anymore for the calculations
+    //filter[i].getGravityVector(&x, &y, &z);
+    // upwards vector to begin with (used to be gravity vector)
     accDirection[0] = 0;
     accDirection[1] = 1;
     accDirection[2] = 0;
+    // get euler angles from the filter
+    // the gyro_zerorot is calibration data to align all of the orientations, but was not needed for this, (they are all asigned to 0)
     euler[0] = filter[i].getRollRadians() - gyro_zerorot[i*3 + 0];
     euler[1] = filter[i].getPitchRadians() - gyro_zerorot[i*3 + 1];
     euler[2] = filter[i].getYawRadians() - gyro_zerorot[i*3 + 2];
-
-    /*
-    if (firstRead == 0) {
-      Serial.println("calibrated");
-      gyro_zerorot[i*3 + 0] = euler[0];
-      gyro_zerorot[i*3 + 1] = euler[1];
-      gyro_zerorot[i*3 + 2] = euler[2];
-    }*/
     
-
+    // printing out some direction info
     Serial.print("Direction: ");
     printVector(accDirection);
     Serial.println("");
     Serial.print("Rotation: ");
     printVector(euler);
     Serial.println("");
-    
-
-    //normalize(accDirection); // normalize direction
-    // cross base direction with direction of gravity to get axis of rotation
-    
-    
-
+ 
     // set base orientation
     if (i == 0) {
       baseAngles[0] = euler[0];
       baseAngles[1] = euler[1];
       baseAngles[2] = euler[2];
-      crossProduct(accDirection, yAxis, axisOfRotation); // get axis of rotation to rotate up
-      angle = angleBetween(yAxis, accDirection);
+      //crossProduct(accDirection, yAxis, axisOfRotation); // get axis of rotation to rotate up (if using gravity vector)
+      //angle = angleBetween(yAxis, accDirection);
     } else {
       // rotate for gyro offset
       rotateVectorCC(accDirection, xAxis, baseAngles[0]-euler[0]);
       rotateVectorCC(accDirection, yAxis, baseAngles[1]-euler[1]);
       rotateVectorCC(accDirection, zAxis, baseAngles[2]-euler[2]);
     }
-    //rotateVectorCC(accDirection, axisOfRotation, angle); // rotate to be inlign with the upward position
+    //rotateVectorCC(accDirection, axisOfRotation, angle); // rotate to be inlign with the upward position (if using gravity vector)
     Serial.print("Corrected: ");
     printVector(accDirection);
     Serial.println("");
-    normalize(accDirection);
+    normalize(accDirection); // normalize vector to keep segment sizes all the same length
     add(positions[i], accDirection, positions[i+1]); // add the new position
   }
-  firstRead--;
-
-
-
-  tft.fillScreen(BLACK);
+  
+  tft.fillScreen(BLACK); // start with a blank screen
+  // print out positions - the first origin position is not used
   for (int i = 1; i < SENSOR_COUNT + 1; i++) {
-    adaptPosition(positions[i]);
-    printPosition(positions[i]);
+    adaptPosition(positions[i]); // turn position from 3d space to a position on the display
+    printPosition(positions[i]); // display position on the display 
   }
   for (int i = 2; i < SENSOR_COUNT + 1; i++) {
-    //tft.drawLine(positions[i - 1][0], positions[i - 1][1], positions[i][0], positions[i][1], GREEN);
-    connectPoints(positions[i - 1], positions[i]);
+    //tft.drawLine(positions[i - 1][0], positions[i - 1][1], positions[i][0], positions[i][1], GREEN); // simple line between points
+    connectPoints(positions[i - 1], positions[i]); // double line to connect points
   }
   
 
 }
 
-// veiwing from z axis
+/*
+ * Print a white circle on the touchscreen with a vector {x, y, size}
+ */
 void printPosition(double pos[3]) {
   tft.drawCircle(pos[0], pos[1], pos[2], WHITE);
 }
 
-
+/*
+ * Connect 2 points with 2 lines connected to the edge of the circles
+ */
 void connectPoints(double pos1[3], double pos2[3]) {
 
   // reciprocalSlope for getting points tangent to the slope on the outside of the circle
@@ -238,23 +236,11 @@ void connectPoints(double pos1[3], double pos2[3]) {
   // z axis is the radius of the circle
   tft.drawLine(pos1[0] + xOffset * pos1[2], pos1[1] + yOffset * pos1[2], pos2[0] + xOffset * pos2[2], pos2[1] + yOffset * pos2[2], GREEN);
   tft.drawLine(pos1[0] - xOffset * pos1[2], pos1[1] - yOffset * pos1[2], pos2[0] - xOffset * pos2[2], pos2[1] - yOffset * pos2[2], GREEN);
-  
-
-  Serial.print("Pos 1: "); printVector(pos1); Serial.println("");
-  Serial.print("Pos 2: "); printVector(pos2); Serial.println("");
-  
-  Serial.print(reciprocalSlope); Serial.println(" yslope");
-
-
-
-
-  //tft.drawLine(pos1[0], pos1[1], pos2[0], pos2[1], GREEN);
 }
 
-double getDistance(double pos1[3], double pos2[3]) {
-  return sqrt(pow(pos2[0] - pos1[0], 2) + pow(pos2[1] - pos1[1], 2) + pow(pos2[2] - pos1[2], 2));
-}
-
+/*
+ * Adapt 3d position to position on the display
+ */
 void adaptPosition(double pos[3]) {
   float modifier = 40;
   pos[0] = (tft.width() / 2) + (pos[0] * modifier);
@@ -262,7 +248,9 @@ void adaptPosition(double pos[3]) {
   pos[2] = 5 + (pos[2]);
 }
 
-
+/*
+ * Print a vector to the serial monitor
+ */
 void printVector(double v[3]) {
   Serial.print(v[0]);
   Serial.print(" x   ");
@@ -272,8 +260,10 @@ void printVector(double v[3]) {
   Serial.print(" z   ");
 }
 
-
-
+/*
+ * The next few functions are for vector math
+ */
+ 
 void normalize(double vector[3]) {
   double magnitude = getMagnitude(vector);
   vector[0] = vector[0] / magnitude;
@@ -289,7 +279,7 @@ double getMagnitude(double vector[3]) {
   //Serial.print("Magnitude: "); Serial.println(mag);
   return mag;
 }
-
+ 
 void add(double v1[3], double v2[3], double result[3]) {
   result[0] = v1[0] + v2[0];
   result[1] = v1[1] + v2[1];
@@ -320,21 +310,14 @@ double dotProduct(double v1[3], double v2[3]) {
   return result;
 }
 
-// returns radians
-void calcRollPitch(double acc[3], double result[2]) {
-  double x_Buff = float(acc[0]);
-  double y_Buff = float(acc[1]);
-  double z_Buff = float(acc[2]);
-  result[0] = atan2(y_Buff, z_Buff);                                      // * 57.3; // roll
-  result[1] = atan2((-x_Buff), sqrt(y_Buff * y_Buff + z_Buff * z_Buff));  // * 57.3; // pitch
-}
-
 double angleBetween(double v1[3], double v2[3]) {
   double before = dotProduct(v1, v2) / (getMagnitude(v1) * getMagnitude(v2));
   //Serial.print("before: "); Serial.println(before);
   return acos(before);
 }
 
+// this code was taken from here: https://stackoverflow.com/questions/31225062/rotating-a-vector-by-angle-and-axis-in-java
+// and modified to work in c++
 void rotateVectorCC(double vec[], double axis[], double theta) {
   double x, y, z;
   double u, v, w;
@@ -344,15 +327,6 @@ void rotateVectorCC(double vec[], double axis[], double theta) {
   u = axis[0];
   v = axis[1];
   w = axis[2];
-  /*
-        Serial.print("vec: ");
-        printVector(vec);
-        Serial.println("");
-        Serial.print("axis: ");
-        printVector(axis);
-        Serial.println("");
-        Serial.println(theta);
-        */
   double v1 = u * x + v * y + w * z;
   double xPrime = u * v1 * (1 - cos(theta))
                   + x * cos(theta)
@@ -372,6 +346,9 @@ void rotateVectorCC(double vec[], double axis[], double theta) {
   vec[2] = zPrime;
 }
 
+/*
+ * Initialize sensors and modify settings
+ */
 void init_sensors() {
   if (!sox[0].begin_I2C(0x6A)) {
     Serial.println("Failed to find LSM6DSOX chip 1");
